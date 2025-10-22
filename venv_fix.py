@@ -4,11 +4,13 @@ Windows venv executable repair tool
 Fixes the shebang line in Python virtual environment executables
 """
 
-import re
 import argparse
-import sys
 import os
-from pathlib import Path
+import re
+import sys
+
+PATTERN1 = re.compile(br'(?<=#!)[^\r\n]*(?=[\r\n]+PK)')
+PATTERN2 = re.compile(br'(?<=#!)[^\r\n]*')
 
 
 def repair_file(filename, base_interpreter=None, print_only=False, debug=False, backup=False):
@@ -32,17 +34,11 @@ def repair_file(filename, base_interpreter=None, print_only=False, debug=False, 
             print(f"File size: {len(content)} bytes")
             print(f"First 100 bytes: {content[:100]}")
 
-        # 修复正则表达式 - 使用原始字节字符串避免转义问题
-        # 方法1: 查找 #! 到换行符之间的内容
-        pattern1 = br'(?<=#!)[^\r\n]*(?=[\r\n]+PK)'
-        # 方法2: 如果没有PK，查找 #! 到行尾的内容
-        pattern2 = br'(?<=#!)[^\r\n]*'
-
-        r = re.search(pattern1, content)
+        r = re.search(PATTERN1, content)
 
         if r is None:
             # Try alternative pattern in case file doesn't have PK header
-            r = re.search(pattern2, content)
+            r = re.search(PATTERN2, content)
             if r is None:
                 print(f"Error: {filename} does not appear to be a venv executable", file=sys.stderr)
                 return False
@@ -64,11 +60,9 @@ def repair_file(filename, base_interpreter=None, print_only=False, debug=False, 
             except Exception as e:
                 print(f"Warning: Could not create backup for {filename}: {e}")
 
-        # 使用更简单的方法替换内容 - 直接定位和替换
         old_shebang_part = r.group()
         new_shebang_part = base_interpreter.encode('utf-8')
 
-        # 直接替换匹配到的部分
         start, end = r.span()
         new_content = content[:start] + new_shebang_part + content[end:]
 
@@ -97,16 +91,16 @@ def main():
         epilog="""
 Examples:
   # Print current shebang only
-  venv_repair.py -f venv/Scripts/python.exe -p
+  venv_repair.py -f venv/Scripts/pip.exe -p
 
   # Repair with specific Python interpreter
-  venv_repair.py -f venv/Scripts/python.exe -b "C:/Python39/python.exe"
+  venv_repair.py -f venv/Scripts/pip.exe -b "C:/Python39/python.exe"
 
   # Read multiple filenames from stdin (e.g., from ls or dir)
   ls venv/Scripts/*.exe | venv_repair.py -b "C:/Python39/python.exe"
 
   # Repair with backup
-  venv_repair.py -f venv/Scripts/python.exe -b "C:/Python39/python.exe" --backup
+  venv_repair.py -f venv/Scripts/pip.exe -b "C:/Python39/python.exe" --backup
 
   # Debug mode
   venv_repair.py -f venv/Scripts/pip.exe -b "C:/Python39/python.exe" -d
@@ -130,11 +124,10 @@ Examples:
     if not args.print_only and not args.base_interpreter:
         parser.error("--base_interpreter is required unless using --print_only")
 
-    # Get file list - 如果没有指定文件，自动从stdin读取
+    # Get file list -
     if args.filename:
         filenames = [args.filename]
     else:
-        # 从stdin读取文件名
         filenames = []
         for line in sys.stdin:
             filename = line.strip()
